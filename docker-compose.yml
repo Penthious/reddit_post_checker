@@ -1,0 +1,11 @@
+version: "3.7"
+
+services:
+    reddit_checker:
+        command: nodemon --watch './*.go' --watch 'config.json' --signal SIGTERM --exec 'go' run .
+        build:
+            context: .
+            target: DEV
+        container_name: reddit_checker
+        volumes:
+            - ./:/src
