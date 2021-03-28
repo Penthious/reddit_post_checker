@@ -4,35 +4,31 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+
+	_ "embed"
 
 	"github.com/turnage/graw"
 	"github.com/turnage/graw/reddit"
 )
 
+var (
+	Version   string
+	BuildTime string
+)
+
+//go:embed config.json
+var f []byte
+
 func loadConfig() (config, error) {
 	var c config
+	err := json.Unmarshal(f, &c)
 
-	cf, err := os.Open("config.json")
 	if err != nil {
-		return config{}, fmt.Errorf("Error loading config: %v", err)
-	}
-
-	defer cf.Close()
-
-	byteValue, err := ioutil.ReadAll(cf)
-	if err != nil {
-		return config{}, fmt.Errorf("Error sending to bytes: %v", err)
-	}
-
-	err = json.Unmarshal(byteValue, &c)
-	if err != nil {
-		return config{}, fmt.Errorf("Error unmarshalling config: %v", err)
+		return config{}, fmt.Errorf("error unmarshalling json: %v", err)
 	}
 
 	return c, nil
@@ -56,12 +52,12 @@ func (n notifier) notify(p *reddit.Post, c config) error {
 	}
 	if c.Discord.Enabled {
 		if err := n.notifyDiscord(message, c.Discord.Webhook); err != nil {
-			return fmt.Errorf("Error notifing discord: %v\n", err)
+			return fmt.Errorf("error notifying discord: %v", err)
 		}
 	}
 	if c.Browser.Enabled {
 		if err := n.openBrowser(p.URL); err != nil {
-			return fmt.Errorf("Error notifing discord: %v\n", err)
+			return fmt.Errorf("error notifying browser: %v", err)
 		}
 	}
 
@@ -71,13 +67,20 @@ func (n notifier) notify(p *reddit.Post, c config) error {
 func (n notifier) notifyDiscord(message string, webhook string) error {
 	values := map[string]string{"content": message}
 	jsonValue, err := json.Marshal(values)
+	if err != nil {
+		return fmt.Errorf("error marshalling discord json: %v", err)
+	}
+
 	req, err := http.NewRequest("POST", webhook, bytes.NewBuffer(jsonValue))
+	if err != nil {
+		return fmt.Errorf("error setting up request to discord webhook: %v", err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	_, err = client.Do(req)
 	if err != nil {
-		return nil
+		return fmt.Errorf("error making request to discord webhook: %v", err)
 	}
 
 	return nil
@@ -118,34 +121,42 @@ func (r *redditBot) Post(p *reddit.Post) error {
 }
 
 func main() {
-	c, err := loadConfig()
 
-	bot, err := reddit.NewBot(reddit.BotConfig{
-		Agent: c.Reddit.UserAgent,
-		App: reddit.App{
-			ID:       c.Reddit.ClientID,
-			Secret:   c.Reddit.ClientSecret,
-			Username: c.Reddit.Username,
-			Password: c.Reddit.Password,
-		},
-		Rate: 0,
-	})
-	if err != nil {
-		fmt.Println("Failed to create bot handler: ", err)
-		return
-	}
+	for {
+		fmt.Printf("Version: %s, Build Time: %s\n", Version, BuildTime)
 
-	rc := graw.Config{Subreddits: c.Subreddits}
-	handler := &redditBot{bot: bot, config: c}
+		c, err := loadConfig()
+		if err != nil {
+			fmt.Println("Failed to load config: ", err)
+		}
 
-	if c.Keywords.Enabled {
-		fmt.Printf("Listening for new post in subreddits: %v for keywords with %v\n", c.Subreddits, c.Keywords.Terms)
-	} else {
-		fmt.Printf("Listening for new post in subreddits: %v\n", c.Subreddits)
-	}
-	if _, wait, err := graw.Run(handler, bot, rc); err != nil {
-		fmt.Println("Failed to start graw run: ", err)
-	} else {
-		fmt.Println("graw run failed: ", wait())
+		bot, err := reddit.NewBot(reddit.BotConfig{
+			Agent: c.Reddit.UserAgent,
+			App: reddit.App{
+				ID:       c.Reddit.ClientID,
+				Secret:   c.Reddit.ClientSecret,
+				Username: c.Reddit.Username,
+				Password: c.Reddit.Password,
+			},
+			Rate: 0,
+		})
+		if err != nil {
+			fmt.Println("Failed to create bot handler: ", err)
+			return
+		}
+
+		rc := graw.Config{Subreddits: c.Subreddits}
+		handler := &redditBot{bot: bot, config: c}
+
+		if c.Keywords.Enabled {
+			fmt.Printf("Listening for new post in subreddits: %v for keywords with %v\n", c.Subreddits, c.Keywords.Terms)
+		} else {
+			fmt.Printf("Listening for new post in subreddits: %v\n", c.Subreddits)
+		}
+		if _, wait, err := graw.Run(handler, bot, rc); err != nil {
+			fmt.Println("Failed to start graw run: ", err)
+		} else {
+			fmt.Println("graw run failed: ", wait())
+		}
 	}
 }
