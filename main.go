@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/rs/zerolog"
+	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -18,11 +21,19 @@ import (
 var (
 	Version   string
 	BuildTime string
+	Logger zerolog.Logger
 )
 
 //go:embed config.json
 var f []byte
 
+func init() {
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	Logger = zerolog.New(io.MultiWriter(os.Stdout)).With().Timestamp().
+		Interface("BuildTime", BuildTime).
+		Interface("Version", Version).
+		Logger()
+}
 func loadConfig() (config, error) {
 	var c config
 	err := json.Unmarshal(f, &c)
@@ -46,9 +57,13 @@ func newNotifier() notifierInterface {
 
 func (n notifier) notify(p *reddit.Post, c config) error {
 	message := fmt.Sprintf("%s | <%s>", p.Title, p.URL)
-
 	if c.Debug {
-		fmt.Println(message)
+		Logger.Info().Msg("test thing")
+		fmt.Println("==========================================")
+		fmt.Println("Title: \n", message)
+		fmt.Println("User: \n", p.Author)
+		fmt.Println("Body: \n", p.SelfText)
+		fmt.Println("==========================================")
 	}
 	if c.Discord.Enabled {
 		if err := n.notifyDiscord(message, c.Discord.Webhook); err != nil {
@@ -121,6 +136,7 @@ func (r *redditBot) Post(p *reddit.Post) error {
 }
 
 func main() {
+	Logger.Info().Msg("started")
 
 	for {
 		fmt.Printf("Version: %s, Build Time: %s\n", Version, BuildTime)

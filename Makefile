@@ -7,6 +7,11 @@
 VERSION := $(shell git rev-parse --short HEAD)
 NOW := $(shell date +'%Y-%m-%d_%T')
 
+deps-upgrade:
+	go get -u -v ./...
+	go mod tidy
+	go mod vendor
+
 build:
 	@env GOOS=linux GOARCH=arm GOARM=6 go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.BuildTime=$(NOW)'" -o app .
 .PHONY: build
